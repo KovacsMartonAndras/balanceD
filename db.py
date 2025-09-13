@@ -39,3 +39,8 @@ def fetch_transactions():
     df = pd.read_sql_query("SELECT * FROM transactions", conn)
     conn.close()
     return df
+
+def get_current_balance():
+    df = fetch_transactions()
+    print(sum(df["amount"]))
+    return sum(df["amount"])
