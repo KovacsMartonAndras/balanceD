@@ -1,5 +1,6 @@
 from dash import Dash, html, dcc
 import dash
+from db import init_db
 app = Dash(__name__, use_pages=True)  # enable Dash Pages
 
 app.layout = html.Div([
@@ -14,6 +15,8 @@ app.layout = html.Div([
 
     dash.page_container  # where each page’s layout gets displayed
 ])
+
+init_db()
 from pages import bookkeeper
 bookkeeper.register_callbacks(app)
 if __name__ == "__main__":

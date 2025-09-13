@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 from dash import html, dcc, register_page, Input, Output, State, dash_table
 import constants as const
+from db import insert_transaction
 
 register_page(__name__, path="/bookkeeper")
 
@@ -74,7 +75,19 @@ def register_callbacks(app):
         for header in df.columns:
             if header in const.AMOUNT_HEADER_NAMES:
                 amount_column_name = header
-                break
+            elif header in const.CATEGORY_HEADER_NAMES:
+                category_column_name = header
+            elif header in const.CURRENCY_HEADER_NAMES:
+                currency_column_name = header
+
+        # Insert rows into database
+        for _, row in df.iterrows():
+            insert_transaction(
+                date=row[date_column_name].strftime("%Y-%m-%d %H:%M:%S"),
+                description=row[category_column_name],
+                currency=row[currency_column_name],
+                amount=row[amount_column_name]
+            )
 
         # Create table
         table = dash_table.DataTable(

@@ -8,3 +8,9 @@ CURRENCY_HEADER_NAMES = ["Pénznem"]
 
 # DATE
 DATE_HEADER_NAMES = ["Teljesítés dátuma"]
+
+# CATEGORY
+CATEGORY_HEADER_NAMES = ["Leírás"]
+
+# CATEGORIES
+DATA_CATEGORIES = ["Travel", "Food and Drinks", "Bills", "Leisure"]
