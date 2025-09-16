@@ -69,11 +69,16 @@ class Bookkeeper(Page):
                     category_column_name = header
                 elif header in const.CURRENCY_HEADER_NAMES:
                     currency_column_name = header
+                elif header in const.TYPE_HEADER_NAMES:
+                    type_column_name = header
 
             # Insert rows into database
             for _, row in df.iterrows():
+                val = row[date_column_name]
+                if pd.isna(val) or row[type_column_name] in  const.EXCLUDED_TYPES:
+                    continue  # or decide how you want to handle missing dates
                 insert_transaction(
-                    date=row[date_column_name].strftime("%Y-%m-%d %H:%M:%S"),
+                    date=val.strftime("%Y-%m-%d %H:%M:%S"),
                     description=row[category_column_name],
                     currency=row[currency_column_name],
                     amount=row[amount_column_name]
@@ -102,14 +107,10 @@ class Bookkeeper(Page):
                 date_column_name = header
                 break
         if date_column_name is None:
-            raise ValueError
+            raise ValueError("No date column found")
 
-        # Convert date column to datetime
-        try:
-            df[date_column_name] = pd.to_datetime(df[date_column_name], format="%d.%m.%Y %H:%M:%S")
-        except:
-            # fallback if exact format fails
-            df[date_column_name] = pd.to_datetime(df[date_column_name], dayfirst=True, errors="coerce")
+        # Convert to datetime (NaT if parsing fails)
+        df[date_column_name] = pd.to_datetime(df[date_column_name], errors="coerce")
 
         return date_column_name
 

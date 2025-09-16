@@ -12,5 +12,9 @@ DATE_HEADER_NAMES = ["Teljesítés dátuma"]
 # CATEGORY
 CATEGORY_HEADER_NAMES = ["Leírás"]
 
+# TYPE of Transaction
+TYPE_HEADER_NAMES = ["Típus"]
+EXCLUDED_TYPES = ["Átváltás"]
+
 # CATEGORIES
 DATA_CATEGORIES = ["Travel", "Food and Drinks", "Bills", "Leisure", "Other"]

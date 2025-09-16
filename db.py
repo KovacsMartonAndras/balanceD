@@ -1,6 +1,6 @@
 import sqlite3
 import pandas as pd
-
+import exchange_functions as exchange
 DB_FILE = "finances.db"
 
 def init_db():
@@ -40,7 +40,25 @@ def fetch_transactions():
     conn.close()
     return df
 
-def get_current_balance():
-    df = fetch_transactions()
-    print(sum(df["amount"]))
-    return sum(df["amount"])
+def get_current_balance(target_currency):
+    total_balance = 0
+    for source_currency, amount in get_balance_per_currency():
+        total_balance += exchange.convert_to_currency(source_currency,target_currency, amount)
+    return total_balance
+
+def get_balance_per_currency():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT currency, SUM(amount) as balance
+        FROM transactions
+        GROUP BY currency
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_balance_for_common(target_currency):
+    balance_in_common = [(source_currency,exchange.convert_to_currency(source_currency, target_currency, amount)) for source_currency, amount in get_balance_per_currency()]
+    return balance_in_common
+

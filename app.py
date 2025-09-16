@@ -22,6 +22,7 @@ class App:
         self.register_callbacks()
 
     def init_pages(self):
+        print("Instance off app is created")
         self.pages = [DashBoard(self.app,None), Bookkeeper(self.app,None)]
         # Map paths -> page instance
 
@@ -59,10 +60,11 @@ class App:
 
 
     def run(self):
-        self.app.run(debug=True, use_reloader=False)
+        self.app.run(debug=True)
 
 import os
+app = App()
 
 if __name__ == "__main__":
-    app = App()
+
     app.run()
