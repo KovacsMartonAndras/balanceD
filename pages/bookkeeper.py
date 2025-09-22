@@ -1,22 +1,28 @@
 import base64
 import io
 import pandas as pd
-import plotly.express as px
-from dash import html, dcc, register_page, Input, Output, State, dash_table
+from dash import html, dcc, Input, Output, State, dash_table
+from dash.exceptions import PreventUpdate
 from model_classes.page import Page
 import constants as const
-from db import insert_transaction
-
+from db import insert_transaction, create_booking, get_available_booking_id
 
 
 class Bookkeeper(Page):
     path = "/bookkeeper"
     def __init__(self, app, db):
         super().__init__(app,db)
+        self.current_accounting_df = None
+        self.current_csv_source = None
+        self.current_booking_id = None
 
     def define_layout(self):
         layout = html.Div([
             html.H2("Bookkeeper"),
+            # Button to create a new booking
+            html.Button("Create New Booking", id="create-booking-btn"),
+            html.Div(id="current-booking-label", style={"margin": "10px"}),
+
             # File upload component
             dcc.Upload(
                 id="upload-data",
@@ -25,79 +31,119 @@ class Bookkeeper(Page):
                     html.A("Select a CSV File")
                 ]),
                 style={
-                    "width": "60%",
-                    "height": "60px",
-                    "lineHeight": "60px",
+                    "width": "300px",
+                    "height": "40px",
+                    "lineHeight": "40px",
                     "borderWidth": "1px",
                     "borderStyle": "dashed",
                     "borderRadius": "5px",
                     "textAlign": "center",
-                    "margin": "10px"
+                    "margin": "10px auto"
                 },
-                multiple=False  # only one file at a time
+                multiple=False,
+                disabled=True
             ),
 
-            # Output: table + graph
-            html.Div(id="output-table"),
-            dcc.Graph(id="output-graph")
+            # Preview transactions
+            html.Div(id="transactions-preview"),
+
+            # Button to save transactions
+            html.Button("Save Transactions", id="save-transactions-btn"),
+            html.Div(id="save-result")
         ])
 
         return layout
 
     def register_callbacks(self,app):
-        @app.callback(
-            [Output("output-table", "children"),
-             Output("output-graph", "figure")],
-            [Input("upload-data", "contents")],
-            [State("upload-data", "filename")]
-        )
-        def update_output(contents, filename):
-            if contents is None:
-                return html.P("No file uploaded yet."), {}
 
-            # Parse uploaded content
+        @app.callback( [Output("upload-data", "disabled"),
+            Output("current-booking-label", "children")],
+            Input("create-booking-btn", "n_clicks"),
+            prevent_initial_call=True
+        )
+        def create_booking_callback(n_clicks):
+            if not n_clicks:
+                raise PreventUpdate
+            self.current_booking_id = get_available_booking_id()  # <- must be implemented in db.py
+            return False,f"Active Booking ID: {self.current_booking_id}"
+
+
+        # Upload CSV and preview
+        @app.callback(
+            Output("transactions-preview", "children"),
+            Input("upload-data", "contents"),
+            State("upload-data", "filename"),
+            prevent_initial_call=True
+        )
+        def upload_csv(contents, filename):
+            if contents is None or self.current_booking_id is None:
+                raise PreventUpdate
+
             content_type, content_string = contents.split(",")
             decoded = base64.b64decode(content_string)
             df = pd.read_csv(io.StringIO(decoded.decode("utf-8")))
 
-            date_column_name = self.handle_date(df)
-            # Find amount column
-            for header in df.columns:
-                if header in const.AMOUNT_HEADER_NAMES:
-                    amount_column_name = header
-                elif header in const.CATEGORY_HEADER_NAMES:
-                    category_column_name = header
-                elif header in const.CURRENCY_HEADER_NAMES:
-                    currency_column_name = header
-                elif header in const.TYPE_HEADER_NAMES:
-                    type_column_name = header
+            # Add excluded column (default False)
+            df["excluded"] = False
+            self.current_accounting_df = df
 
-            # Insert rows into database
-            for _, row in df.iterrows():
-                val = row[date_column_name]
-                if pd.isna(val) or row[type_column_name] in  const.EXCLUDED_TYPES:
-                    continue  # or decide how you want to handle missing dates
-                insert_transaction(
-                    date=val.strftime("%Y-%m-%d %H:%M:%S"),
-                    description=row[category_column_name],
-                    currency=row[currency_column_name],
-                    amount=row[amount_column_name]
-                )
-
-            # Create table
             table = dash_table.DataTable(
-                columns=[{"name": i, "id": i} for i in df.columns],
+                id="transactions-datatable",
+                columns=[{"name": i, "id": i, "editable": (i == "excluded")}
+                         for i in df.columns],
                 data=df.to_dict("records"),
-                page_size=10,
+                page_size=20,
+                editable=True,
                 style_table={"overflowX": "auto"}
             )
-            # Aggregate by date (sum amounts per day)
-            df_daily = df.groupby(df[date_column_name].dt.date)[amount_column_name].sum().reset_index()
 
-            # Create bar chart
-            fig = px.bar(df_daily, x=date_column_name, y=amount_column_name, title="Expenses by Day")
+            self.current_csv_source = filename
+            return table
 
-            return table, fig
+        @app.callback(
+            Output("save-result", "children"),
+            Input("save-transactions-btn", "n_clicks"),
+            State("transactions-datatable", "data"),
+            prevent_initial_call=True
+        )
+        def save_transactions(n_clicks, rows):
+            if not n_clicks or self.current_accounting_df is None or self.current_booking_id is None:
+                raise PreventUpdate
+
+            df = pd.DataFrame(rows)
+            self.insert_transactions_into_database(df)
+
+            # TODO: Check if new transactions were added and only allow new booking log if there were any
+            create_booking()  # Adds new booking to bookings database
+            booking_id = self.current_booking_id
+            self.current_booking_id = None
+            return True,f"Saved {len(df)} transactions into booking {booking_id}"
+
+    def insert_transactions_into_database(self,df):
+        date_column_name = self.handle_date(df)
+        # Find amount column
+        # TODO: possibly better solution for supporting different column names
+        for header in df.columns:
+            if header in const.AMOUNT_HEADER_NAMES:
+                amount_column_name = header
+            elif header in const.CATEGORY_HEADER_NAMES:
+                category_column_name = header
+            elif header in const.CURRENCY_HEADER_NAMES:
+                currency_column_name = header
+            elif header in const.TYPE_HEADER_NAMES:
+                type_column_name = header
+
+        # Insert rows into database
+        for _, row in df.iterrows():
+            val = row[date_column_name]
+            if pd.isna(val) or row[type_column_name] in const.EXCLUDED_TYPES:
+                continue  # or decide how you want to handle missing dates
+            insert_transaction(
+                date=val.strftime("%Y-%m-%d %H:%M:%S"),
+                recipient=row[category_column_name],
+                currency=row[currency_column_name],
+                amount=row[amount_column_name], source_csv=self.current_csv_source,booking_id=self.current_booking_id
+            ) # TODO: add exlude logic, now it defaults to False
 
     def handle_date(self,df):
         date_column_name = None
@@ -113,6 +159,9 @@ class Bookkeeper(Page):
         df[date_column_name] = pd.to_datetime(df[date_column_name], errors="coerce")
 
         return date_column_name
+
+    def clear_current_accounting(self):
+        self.current_accounting_df = None
 
 
 

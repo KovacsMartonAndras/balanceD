@@ -1,32 +1,48 @@
 import sqlite3
 import pandas as pd
 import exchange_functions as exchange
+from datetime import datetime
+
 DB_FILE = "finances.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
+    # Create bookings table
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            description TEXT NOT NULL,
-            currency TEXT NOT NULL,
-            amount REAL NOT NULL,
-            UNIQUE(date, description, currency, amount)
-        )
-    """)
+            CREATE TABLE IF NOT EXISTS bookings (
+                booking_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL
+            )
+        """)
+
+    # Create transactions table
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL,
+                recipient TEXT NOT NULL,
+                date TEXT NOT NULL,
+                source_csv TEXT NOT NULL,
+                excluded INTEGER NOT NULL DEFAULT 0,
+                booking_id INTEGER,
+                FOREIGN KEY (booking_id) REFERENCES bookings (booking_id),
+                UNIQUE (amount, currency, recipient, date, source_csv)
+            )
+        """)
     conn.commit()
     conn.close()
 
-def insert_transaction(date, description, currency, amount):
+def insert_transaction(date, recipient, currency, amount, source_csv, excluded=0, booking_id=None):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            "INSERT INTO transactions (date, description, currency, amount) VALUES (?, ?, ?, ?)",
-            (date, description, currency, amount)
-        )
+        cursor.execute("""
+            INSERT INTO transactions (date, recipient, currency, amount, source_csv, excluded, booking_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (date, recipient, currency, amount, source_csv, excluded, booking_id))
         conn.commit()
     except sqlite3.IntegrityError:
         # Duplicate detected, ignore
@@ -40,13 +56,43 @@ def fetch_transactions():
     conn.close()
     return df
 
-def get_current_balance(target_currency):
+def create_booking():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    try:
+        # Insert a new booking with current timestamp
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("INSERT INTO bookings (date) VALUES (?)", (now,))
+        conn.commit()
+        # Get the id of the newly created booking
+        booking_id = cursor.lastrowid
+        return booking_id
+    finally:
+        conn.close()
+
+def get_available_booking_id():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    try:
+        # Database is empty
+        if cursor.lastrowid is None:
+            return 1
+        else:
+            # Get latest booking id + 1 for the next booking
+            booking_id = cursor.lastrowid + 1
+            return booking_id
+    finally:
+        conn.close()
+
+
+
+def get_current_balance(target_currency):  # TEST
     total_balance = 0
     for source_currency, amount in get_balance_per_currency():
         total_balance += exchange.convert_to_currency(source_currency,target_currency, amount)
     return total_balance
 
-def get_balance_per_currency():
+def get_balance_per_currency(): # TEST
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("""
@@ -58,7 +104,7 @@ def get_balance_per_currency():
     conn.close()
     return rows
 
-def get_balance_for_common(target_currency):
+def get_balance_for_common(target_currency): # TEST
     balance_in_common = [(source_currency,exchange.convert_to_currency(source_currency, target_currency, amount)) for source_currency, amount in get_balance_per_currency()]
     return balance_in_common
 
