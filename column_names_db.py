@@ -57,24 +57,22 @@ def init_columns_db():
     conn.close()
 
 
-def insert_column_name(tablename, name):
+def insert_column_name(tablename, value):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
-        cursor.execute(f"""
-            INSERT INTO {tablename} ({tablename}{name})
-            VALUES (?)
-        """, name)
-        conn.commit()
-    except sqlite3.IntegrityError:
-        # Duplicate detected, ignore
-        #TODO
-        pass
+        if value is not None:
+            cursor.execute(f"""
+                INSERT OR IGNORE INTO {tablename} ({tablename})
+                VALUES (?)
+            """, (value,))
+            conn.commit()
     finally:
         conn.close()
+
 
 def fetch_names(tablename):
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query(f"SELECT * FROM {tablename}", conn)
     conn.close()
-    return df
+    return df[tablename].tolist()

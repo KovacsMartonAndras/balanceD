@@ -94,8 +94,7 @@ class Bookkeeper(Page):
             self.current_csv_source = filename
 
             #Detect columns
-            missing_columns = const.REQUIRED_COLUMNS
-
+            missing_columns = const.REQUIRED_COLUMNS.copy()
             # Search for appropriate columns names
             self.cols = {}
             for column_name in const.REQUIRED_COLUMNS:
@@ -104,6 +103,7 @@ class Bookkeeper(Page):
                         self.cols[column_name] = header
                         missing_columns.remove(column_name)
                         break
+
             return {
                 "data": df.to_dict("records"),
                 "columns": list(df.columns),
@@ -120,10 +120,14 @@ class Bookkeeper(Page):
         )
 
         def check_for_columns(data, n_clicks):
-            if data.get("missing", []):
-                return render_preview(data)
+            if data is not None:
+                if len(data.get("missing", [])) != 0:
+                    return render_preview(data)
+                else:
+                    df  = pd.DataFrame(data['data'])
+                    return render_table(df)
             else:
-                return render_table(data["data"])
+                raise PreventUpdate
 
         def render_table(df):
             return dash_table.DataTable(
@@ -137,7 +141,6 @@ class Bookkeeper(Page):
                 fixed_rows={"headers": True}
             )
 
-
         def render_preview(data):
             if data is None:
                 raise PreventUpdate
@@ -150,7 +153,7 @@ class Bookkeeper(Page):
                     mapping_ui.append(html.Div([
                         html.Label(f"Select CSV column for '{col}'"),
                         dcc.Dropdown(
-                            id={"type": "map-column_name", "index": f"map-{col}-dropdown"},
+                            id={"type": "map-column_name", "index": col},
                             options=[{"label": c, "value": c} for c in df.columns],
                             placeholder="Select the column..."
                         )
@@ -160,138 +163,104 @@ class Bookkeeper(Page):
         @app.callback(
             Output("csv-store", "data"),
             Input("csv-store", "data"),
-            Input({"type": "map-column_name", "index": ALL}, "value"),
+            State({"type": "map-column_name", "index": ALL}, "id"),
+            State({"type": "map-column_name", "index": ALL}, "value"),
             Input("save-column-btn", "n_clicks"),
             prevent_initial_call=True
         )
-        def save_column(n_clicks, data, values):
-            if not n_clicks:
+        def save_column(data, ids, values, n_clicks):
+            if not n_clicks or data is None or (data is not None and len(data.get("missing", [])) == 0):
                 raise PreventUpdate
-            print(values)
 
-            print(data)
-            df = pd.DataFrame(data["data"])
-            missing_columns = const.REQUIRED_COLUMNS
+            if data is not None:
+                df = pd.DataFrame(data["data"])
+                mapping = dict(zip([i["index"] for i in ids], values))
+                missing = data.get("missing", [])
+                for missing_column_name in missing:
+                    insert_column_name(missing_column_name,mapping[missing_column_name])
+
+                # UPDATE DATA
+                # Detect columns
+                missing_columns = const.REQUIRED_COLUMNS
+
+                # Search for appropriate columns names
+                self.cols = {}
+                for column_name in const.REQUIRED_COLUMNS:
+                    for header in df.columns:
+                        if header in fetch_names(column_name):
+                            self.cols[column_name] = header
+                            missing_columns.remove(column_name)
+                            break
+                return {
+                    "data": df.to_dict("records"),
+                    "columns": list(df.columns),
+                    "missing": missing_columns,
+                    "cols": self.cols
+                }
 
 
-            # Search for appropriate columns name
-            self.cols.append(values)
+        @app.callback(
+            Output("save-result", "children"),
+            Input("save-transactions-btn", "n_clicks"),
+            State("transactions-datatable", "selected_rows"),
+            State("transactions-datatable", "data"),
+            prevent_initial_call=True
+        )
 
-            return {
-                "data": df.to_dict("records"),
-                "columns": list(df.columns),
-                "missing": missing_columns
-            }
+        def save_transactions(n_clicks, selected_rows, rows):
+            if not n_clicks or self.current_accounting_df is None or self.current_booking_id is None:
+                raise PreventUpdate
+            df = pd.DataFrame(rows)
 
-    #     @app.callback(
-    #         Output("transactions-preview", "children"),
-    #         Input("csv-store", "data"),
-    #         prevent_initial_call=True
-    #     )
-    #
+            if selected_rows:
+                for i in selected_rows:
+                    df.at[i, "excluded"] = True
 
-    #
+            new_transaction_added = self.insert_transactions_into_database(df)
 
-    #
-    #
-    #
-    #     @app.callback(
-    #         Output("csv-store", "data", allow_duplicate=True),
-    #         Input("save-column-btn", "n_clicks"),
-    #         [State(f"map-{col}-dropdown", "value") for col in const.REQUIRED_COLUMNS],
-    #         State("csv-store", "data"),
-    #         prevent_initial_call=True
-    #     )
-    #
-    #     @app.callback(
-    #         Input("save-column-btn", "n_clicks"),
-    #         [State(f"map-{col}-dropdown", "value") for col in const.REQUIRED_COLUMNS],
-    #         State("uploaded-csv-store", "data"),
-    #         prevent_initial_call=True
-    #     )
-    #
-    #
-    #     # Upload CSV and preview
-    #     @app.callback(
-    #         Output("transactions-preview", "children"),
-    #         Input("upload-data", "contents"),
-    #         State("upload-data", "filename"),
-    #         prevent_initial_call=True
-    #     )
-    #
-    #     @app.callback(
-    #         Output("save-result", "children"),
-    #         [Input("save-transactions-btn", "n_clicks"),
-    #          Input("save-column-btn", "n_clicks")],
-    #         State("transactions-datatable", "selected_rows"),
-    #         State("transactions-datatable", "column"),
-    #         State("transactions-datatable", "data"),
-    #         [State(f"map-{column}-dropdown", "value") for column in const.REQUIRED_COLUMNS],
-    #         prevent_initial_call=True
-    #     )
-    #
-    #     # @app.callback(
-    #     #     Input("save-column-btn", "n_clicks"),
-    #     #     [State(f"map-{column}-dropdown", "value") for column in const.REQUIRED_COLUMNS],
-    #     #     prevent_initial_call=True
-    #     # )
-    #
-    #     def save_transactions(n_clicks, selected_rows, rows):
-    #         if not n_clicks or self.current_accounting_df is None or self.current_booking_id is None:
-    #             raise PreventUpdate
-    #
-    #         df = pd.DataFrame(rows)
-    #
-    #         if selected_rows:
-    #             for i in selected_rows:
-    #                 df.at[i, "excluded"] = True
-    #
-    #         new_transaction_added = self.insert_transactions_into_database(df)
-    #
-    #         # TODO: Different booking_id-s ?
-    #         if new_transaction_added:
-    #             create_booking()  # Adds new booking to bookings database
-    #             booking_id = self.current_booking_id
-    #             self.current_booking_id = None
-    #             return True,f"Saved {len(df)} transactions into booking {booking_id}"
-    #         else:
-    #             return False, f"No new transactions were booked."
-    #
-    #
-    #
-    # def insert_transactions_into_database(self,df) -> bool:
-    #     """
-    #     :param df: holds uploaded csv data
-    #     :param cols: dictionary that holds column names for each required field for transactions
-    #     :return: Returns True if a new transaction was added to the database, otherwise False
-    #     """
-    #     date_column_name = self.handle_date(df)
-    #     new_transaction_added = False
-    #     # Find amount column
-    #     # TODO: possibly better solution for supporting different column names
-    #     for header in df.columns:
-    #         if header in const.FLAGS:
-    #             flag_column_name = header
-    #             break
-    #
-    #     # Insert rows into database
-    #     for _, row in df.iterrows():
-    #         val = row[date_column_name]
-    #         if pd.isna(val):
-    #             continue  # or decide how you want to handle missing dates
-    #         transaction_state = insert_transaction(
-    #             date=val.strftime("%Y-%m-%d %H:%M:%S"),
-    #             recipient=row[self.cols["recipient"]],
-    #             currency=row[self.cols["currency"]],
-    #             amount=row[self.cols["amount"]],
-    #             type=row[self.cols["type"]],
-    #             source_csv=self.current_csv_source,
-    #             booking_id=self.current_booking_id,
-    #             excluded=row[flag_column_name]
-    #         )
-    #         new_transaction_added = transaction_state or new_transaction_added
-    #
-    #     return new_transaction_added
+            # TODO: Different booking_id-s ?
+            if new_transaction_added:
+                create_booking()  # Adds new booking to bookings database
+                booking_id = self.current_booking_id
+                self.current_booking_id = None
+                return True,f"Saved {len(df)} transactions into booking {booking_id}"
+            else:
+                return False, f"No new transactions were booked."
+
+
+
+    def insert_transactions_into_database(self,df) -> bool:
+        """
+        :param df: holds uploaded csv data
+        :param cols: dictionary that holds column names for each required field for transactions
+        :return: Returns True if a new transaction was added to the database, otherwise False
+        """
+        date_column_name = self.handle_date(df)
+        new_transaction_added = False
+        # Find amount column
+        # TODO: possibly better solution for supporting different column names
+        for header in df.columns:
+            if header in const.FLAGS:
+                flag_column_name = header
+                break
+
+        # Insert rows into database
+        for _, row in df.iterrows():
+            val = row[date_column_name]
+            if pd.isna(val):
+                continue  # or decide how you want to handle missing dates
+            transaction_state = insert_transaction(
+                date=val.strftime("%Y-%m-%d %H:%M:%S"),
+                recipient=row[self.cols["recipient"]],
+                currency=row[self.cols["currency"]],
+                amount=row[self.cols["amount"]],
+                type=row[self.cols["type"]],
+                source_csv=self.current_csv_source,
+                booking_id=self.current_booking_id,
+                excluded=row[flag_column_name]
+            )
+            new_transaction_added = transaction_state or new_transaction_added
+        return new_transaction_added
 
     def handle_date(self,df):
         date_column_name = None

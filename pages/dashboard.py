@@ -1,5 +1,5 @@
 from dash import html, dcc, dash_table, Input, Output, State, ctx, no_update
-from db import get_current_balance,get_balance_for_common, get_balance_per_currency,select_transactions_from_booking
+from db import get_current_balance,get_balance_for_common, get_balance_per_currency,select_transactions_from_booking,get_bookings
 from model_classes.page import Page
 import plotly.express as px
 import dash
@@ -101,10 +101,10 @@ class DashBoard(Page):
             Input("url", "pathname"),
         )
         def load_bookings(pathname):
+            print("loading bookings")
             if pathname != "/":
                 return []
-            # Example query (adapt to your DB schema):
-            rows = self.db.query("SELECT booking_id, date FROM bookings ORDER BY date DESC")
+            rows = get_bookings()
             if rows is None:
                 return []
             return [{"booking_id": r[0], "date": r[1]} for r in rows]

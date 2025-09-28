@@ -5,6 +5,23 @@ from datetime import datetime
 
 DB_FILE = "finances.db"
 
+import sqlite3
+
+class Database:
+    def __init__(self, db_file):
+        self.conn = sqlite3.connect(db_file, check_same_thread=False)  # safe for Dash callbacks
+        self.conn.row_factory = sqlite3.Row  # optional: lets you access by column name
+
+    def query(self, sql, params=None):
+        cur = self.conn.cursor()
+        cur.execute(sql, params or [])
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+
+    def close(self):
+        self.conn.close()
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -43,22 +60,27 @@ def insert_transaction(date, recipient, currency, amount, type, source_csv, excl
     try:
         cursor.execute("""
             INSERT INTO transactions (date, recipient, currency, amount, type, source_csv, excluded, booking_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (date, recipient, currency, amount, type, source_csv, excluded, booking_id))
         conn.commit()
         added = True
     except sqlite3.IntegrityError:
         # Duplicates
-        added = False
         pass
     finally:
         conn.close()
+        print(added)
+        return added
 
-def fetch_transactions():
+def query_db_read(query):
     conn = sqlite3.connect(DB_FILE)
-    df = pd.read_sql_query("SELECT * FROM transactions", conn)
+    df = pd.read_sql_query(query, conn)
     conn.close()
     return df
+
+def fetch_transactions():
+    return query_db_read("SELECT * FROM transactions")
+
 
 def create_booking():
     conn = sqlite3.connect(DB_FILE)
@@ -82,7 +104,7 @@ def select_transactions_from_booking(selected_booking_id):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("""
-                        SELECT transaction_id, date, amount, currency, recipient, type, excluded
+                        SELECT transaction_id, date, amount, currency, recipient, type, excluded,booking_id
                         FROM transactions
                         WHERE booking_id = ?
                         ORDER BY date ASC
@@ -91,21 +113,24 @@ def select_transactions_from_booking(selected_booking_id):
     conn.close()
     return rows
 
+def get_bookings():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT booking_id, date FROM bookings ORDER BY date DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
 
 def get_available_booking_id():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    try:
-        # Database is empty
-        if cursor.lastrowid is None:
-            return 1
-        else:
-            # Get latest booking id + 1 for the next booking
-            booking_id = cursor.lastrowid + 1
-            return booking_id
-    finally:
-        conn.close()
-
+    cursor.execute("SELECT seq FROM sqlite_sequence WHERE name='bookings'")
+    row = cursor.fetchone()
+    if row is None:
+        next_id = 1
+    else:
+        next_id = row[0] + 1
+    return next_id
 
 
 def get_current_balance(target_currency):  # TEST
