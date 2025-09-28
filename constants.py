@@ -1,5 +1,6 @@
 # A collection of header names used to identify correct categories
 
+REQUIRED_COLUMNS = ["amount", "recipient", "currency", "type"]
 # Amount
 AMOUNT_HEADER_NAMES = ["Összeg", "Amount"]
 

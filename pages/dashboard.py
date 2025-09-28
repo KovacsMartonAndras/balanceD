@@ -1,5 +1,5 @@
-from dash import html, Input, Output, ctx,dcc
-from db import get_current_balance,get_balance_for_common, get_balance_per_currency
+from dash import html, dcc, dash_table, Input, Output, State, ctx, no_update
+from db import get_current_balance,get_balance_for_common, get_balance_per_currency,select_transactions_from_booking
 from model_classes.page import Page
 import plotly.express as px
 import dash
@@ -14,15 +14,46 @@ class DashBoard(Page):
     def define_layout(self):
         layout = html.Div([
             html.H2("Dashboard"),
-            # Current balance display
+
+            # --- Section: Current Balance ---
             html.Div(id="balance-section"),
 
-            html.Div(
+            html.Div([
                 dcc.Graph(id="dashboard-graph"),
-                style={"display": "inline-block", "verticalAlign": "top", "width": "420px"}
-            )
-        ])
+            ], style={"display": "inline-block", "verticalAlign": "top", "width": "420px"}),
 
+            html.Hr(),
+
+            # --- Section: Bookings + Transactions ---
+            html.Div([
+                html.H3("Bookings"),
+                dash_table.DataTable(
+                    id="bookings-table",
+                    columns=[
+                        {"name": "Booking ID", "id": "booking_id"},
+                        {"name": "Date", "id": "date"},
+                    ],
+                    data=[],  # filled by callback
+                    row_selectable="single",
+                    style_table={"overflowX": "auto", "maxHeight": "300px", "overflowY": "auto"},
+                ),
+            ]),
+
+            html.Div([
+                html.H3("Transactions for Selected Booking"),
+                dash_table.DataTable(
+                    id="transactions-table",
+                    columns=[
+                        {"name": "Transaction ID", "id": "transaction_id"},
+                        {"name": "Date", "id": "date"},
+                        {"name": "Amount", "id": "amount"},
+                        {"name": "Currency", "id": "currency"},
+                    ],
+                    data=[],  # filled dynamically
+                    style_table={"overflowX": "auto", "maxHeight": "400px", "overflowY": "auto"},
+                ),
+            ]),
+        ])
         return layout
 
 
@@ -64,6 +95,43 @@ class DashBoard(Page):
             )
             fig.update_traces(textinfo="percent+label")
             return fig
+
+        @app.callback(
+            Output("bookings-table", "data"),
+            Input("url", "pathname"),
+        )
+        def load_bookings(pathname):
+            if pathname != "/":
+                return []
+            # Example query (adapt to your DB schema):
+            rows = self.db.query("SELECT booking_id, date FROM bookings ORDER BY date DESC")
+            if rows is None:
+                return []
+            return [{"booking_id": r[0], "date": r[1]} for r in rows]
+
+        # --- New: Load transactions for selected booking ---
+        @app.callback(
+            Output("transactions-table", "data"),
+            Input("bookings-table", "selected_rows"),
+            State("bookings-table", "data"),
+        )
+        def load_transactions(selected_rows, bookings_data):
+            if not selected_rows or not bookings_data:
+                return []
+
+            selected_booking_id = bookings_data[selected_rows[0]]["booking_id"]
+
+            transactions = select_transactions_from_booking(selected_booking_id)
+            return [{
+            "transaction_id": r[0],
+            "date": r[1],
+            "amount": r[2],
+            "currency": r[3],
+            "recipient": r[4],
+            "type": r[5],
+            "excluded": bool(r[6]),} for r in  transactions]
+
+
 
     def layout_header_summary(self,total_balance, balances_per_currency):
         return html.Div(

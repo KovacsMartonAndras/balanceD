@@ -4,6 +4,7 @@ from db import init_db
 from pages.dashboard import DashBoard
 from pages.bookkeeper import Bookkeeper
 import dash_bootstrap_components as dbc
+from column_names_db import init_columns_db
 
 class App:
     def __init__(self):
@@ -13,6 +14,7 @@ class App:
 
         # Setup database
         init_db()  # Always init the database, does not overwrite if it exists
+        init_columns_db()
         self.db = None
 
         self.pages = None

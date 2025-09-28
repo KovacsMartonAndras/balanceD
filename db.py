@@ -25,6 +25,7 @@ def init_db():
                 currency TEXT NOT NULL,
                 recipient TEXT NOT NULL,
                 date TEXT NOT NULL,
+                type TEXT NOT NULL,
                 source_csv TEXT NOT NULL,
                 excluded INTEGER NOT NULL DEFAULT 0,
                 booking_id INTEGER,
@@ -35,17 +36,20 @@ def init_db():
     conn.commit()
     conn.close()
 
-def insert_transaction(date, recipient, currency, amount, source_csv, excluded=0, booking_id=None):
+def insert_transaction(date, recipient, currency, amount, type, source_csv, excluded=0, booking_id=None) -> bool:
+    added = False
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO transactions (date, recipient, currency, amount, source_csv, excluded, booking_id)
+            INSERT INTO transactions (date, recipient, currency, amount, type, source_csv, excluded, booking_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (date, recipient, currency, amount, source_csv, excluded, booking_id))
+        """, (date, recipient, currency, amount, type, source_csv, excluded, booking_id))
         conn.commit()
+        added = True
     except sqlite3.IntegrityError:
-        # Duplicate detected, ignore
+        # Duplicates
+        added = False
         pass
     finally:
         conn.close()
@@ -69,6 +73,24 @@ def create_booking():
         return booking_id
     finally:
         conn.close()
+        
+def select_transactions_from_booking(selected_booking_id):
+    """
+    :param selected_booking_id: which booking transactions to retrieve
+    :return: returns transactions corresponding to booking_id
+    """
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+                        SELECT transaction_id, date, amount, currency, recipient, type, excluded
+                        FROM transactions
+                        WHERE booking_id = ?
+                        ORDER BY date ASC
+                    """, (selected_booking_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
 
 def get_available_booking_id():
     conn = sqlite3.connect(DB_FILE)
