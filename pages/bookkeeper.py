@@ -5,7 +5,7 @@ from dash import html, dcc, Input, Output, State, dash_table
 from dash.exceptions import PreventUpdate
 from model_classes.page import Page
 import constants as const
-from db import insert_transaction, create_booking, get_available_booking_id
+from db import insert_transaction, create_booking, get_available_booking_id, fetch_transactions
 
 
 class Bookkeeper(Page):
@@ -84,7 +84,7 @@ class Bookkeeper(Page):
             df = pd.read_csv(io.StringIO(decoded.decode("utf-8")))
 
             # Add excluded column (default False)
-            df["excluded"] = False
+            df["Excluded"] = False
             self.current_accounting_df = df
 
             table = dash_table.DataTable(
@@ -92,9 +92,12 @@ class Bookkeeper(Page):
                 columns=[{"name": i, "id": i, "editable": (i == "excluded")}
                          for i in df.columns],
                 data=df.to_dict("records"),
-                page_size=20,
                 editable=True,
-                style_table={"overflowX": "auto"}
+                row_selectable="multi",
+                selected_rows=[],
+                style_table={"overflowX": "auto",
+                             "overflowY": "auto"},
+                fixed_rows={"headers": True}
             )
 
             self.current_csv_source = filename
@@ -103,17 +106,23 @@ class Bookkeeper(Page):
         @app.callback(
             Output("save-result", "children"),
             Input("save-transactions-btn", "n_clicks"),
+            State("transactions-datatable", "selected_rows"),
             State("transactions-datatable", "data"),
             prevent_initial_call=True
         )
-        def save_transactions(n_clicks, rows):
+        def save_transactions(n_clicks, selected_rows, rows):
             if not n_clicks or self.current_accounting_df is None or self.current_booking_id is None:
                 raise PreventUpdate
 
             df = pd.DataFrame(rows)
+
+            if selected_rows:
+                for i in selected_rows:
+                    df.at[i, "excluded"] = True
+
             self.insert_transactions_into_database(df)
 
-            # TODO: Check if new transactions were added and only allow new booking log if there were any
+            # TODO: Same transaction with a different flag may be added twice under different booking_id-s
             create_booking()  # Adds new booking to bookings database
             booking_id = self.current_booking_id
             self.current_booking_id = None
@@ -121,6 +130,7 @@ class Bookkeeper(Page):
 
     def insert_transactions_into_database(self,df):
         date_column_name = self.handle_date(df)
+
         # Find amount column
         # TODO: possibly better solution for supporting different column names
         for header in df.columns:
@@ -132,6 +142,8 @@ class Bookkeeper(Page):
                 currency_column_name = header
             elif header in const.TYPE_HEADER_NAMES:
                 type_column_name = header
+            elif header in const.FLAGS:
+                flag_column_name = header
 
         # Insert rows into database
         for _, row in df.iterrows():
@@ -142,13 +154,17 @@ class Bookkeeper(Page):
                 date=val.strftime("%Y-%m-%d %H:%M:%S"),
                 recipient=row[category_column_name],
                 currency=row[currency_column_name],
-                amount=row[amount_column_name], source_csv=self.current_csv_source,booking_id=self.current_booking_id
-            ) # TODO: add exlude logic, now it defaults to False
+                amount=row[amount_column_name],
+                source_csv=self.current_csv_source,
+                booking_id=self.current_booking_id,
+                excluded=row[flag_column_name]
+            )
 
     def handle_date(self,df):
         date_column_name = None
         # Find date column
         for header in df.columns:
+            print(f"{header}")
             if header in const.DATE_HEADER_NAMES:
                 date_column_name = header
                 break
@@ -162,10 +178,3 @@ class Bookkeeper(Page):
 
     def clear_current_accounting(self):
         self.current_accounting_df = None
-
-
-
-
-
-
-
