@@ -237,10 +237,10 @@ class Bookkeeper(Page):
         """
         date_column_name = self.handle_date(df)
         new_transaction_added = False
-        # Find amount column
+
         # TODO: possibly better solution for supporting different column names
 
-        # This can't go into the for loop below for now, because flag isn't a required column
+        # Find the flag column
         for header in df.columns:
             if header in const.FLAGS:
                 flag_column_name = header
