@@ -47,21 +47,21 @@ def init_db():
                 excluded INTEGER NOT NULL DEFAULT 0,
                 booking_id INTEGER,
                 FOREIGN KEY (booking_id) REFERENCES bookings (booking_id),
-                UNIQUE (amount, currency, recipient, date, source_csv)
+                UNIQUE (amount, currency, recipient, date, type, source_csv)
             )
         """)
     conn.commit()
     conn.close()
 
-def insert_transaction(date, recipient, currency, amount, type, source_csv, excluded=0, booking_id=None) -> bool:
+def insert_transaction(amount, currency, recipient, date, type, source_csv, excluded=0, booking_id=None) -> bool:
     added = False
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO transactions (date, recipient, currency, amount, type, source_csv, excluded, booking_id)
+            INSERT INTO transactions (amount, currency, recipient, date, type, source_csv, excluded, booking_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (date, recipient, currency, amount, type, source_csv, excluded, booking_id))
+        """, (amount, currency, recipient, date, type, source_csv, excluded, booking_id))
         conn.commit()
         added = True
     except sqlite3.IntegrityError:

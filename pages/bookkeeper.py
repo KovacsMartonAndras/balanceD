@@ -104,11 +104,11 @@ class Bookkeeper(Page):
                         missing_columns.remove(column_name)
                         break
 
+
             return {
                 "data": df.to_dict("records"),
                 "columns": list(df.columns),
                 "missing": missing_columns,
-                "cols": self.cols,
                 "source": filename
             }
 
@@ -181,7 +181,7 @@ class Bookkeeper(Page):
 
                 # UPDATE DATA
                 # Detect columns
-                missing_columns = const.REQUIRED_COLUMNS
+                missing_columns = const.REQUIRED_COLUMNS.copy()
 
                 # Search for appropriate columns names
                 self.cols = {}
@@ -191,11 +191,11 @@ class Bookkeeper(Page):
                             self.cols[column_name] = header
                             missing_columns.remove(column_name)
                             break
+
                 return {
                     "data": df.to_dict("records"),
                     "columns": list(df.columns),
-                    "missing": missing_columns,
-                    "cols": self.cols
+                    "missing": missing_columns
                 }
 
 
@@ -239,6 +239,8 @@ class Bookkeeper(Page):
         new_transaction_added = False
         # Find amount column
         # TODO: possibly better solution for supporting different column names
+
+        # This can't go into the for loop below for now, because flag isn't a required column
         for header in df.columns:
             if header in const.FLAGS:
                 flag_column_name = header
