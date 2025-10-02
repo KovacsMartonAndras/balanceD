@@ -2,7 +2,6 @@ from forex_python.converter import CurrencyRates
 
 def convert_to_currency(source,target,amount):
     c = CurrencyRates()
-    print(c.get_rates(source))
     if source == target:
         return amount
     try:
@@ -14,4 +13,4 @@ def convert_to_currency(source,target,amount):
         return None
     
 if __name__ == "__main__":
-    print(convert_to_currency("EUR","HUF",100))
+    print(convert_to_currency("EUR","USD",100))
