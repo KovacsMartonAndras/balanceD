@@ -2,10 +2,11 @@ import base64
 import io
 import pandas as pd
 from dash import html, dcc, Input, Output, State, dash_table,ALL
+import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
 from model_classes.page import Page
 import constants as const
-from db import insert_transaction, create_booking, get_available_booking_id, fetch_transactions
+from db import insert_transaction, create_booking, get_available_booking_id, select_transactions_from_booking,get_bookings
 from column_names_db import fetch_names, insert_column_name
 
 
@@ -19,60 +20,109 @@ class Bookkeeper(Page):
         self.cols = None
 
     def define_layout(self):
-        layout = html.Div([
-            html.H2("Bookkeeper"),
-            # Button to create a new booking
-            html.Button("Create New Booking", id="create-booking-btn"),
-            html.Div(id="current-booking-label", style={"margin": "10px"}),
+        layout = dbc.Container([
 
-            # File upload component
-            dcc.Upload(
-                id="upload-data",
-                children=html.Div([
-                    "Drag and Drop or ",
-                    html.A("Select a CSV File")
-                ]),
-                style={
-                    "width": "300px",
-                    "height": "40px",
-                    "lineHeight": "40px",
-                    "borderWidth": "1px",
-                    "borderStyle": "dashed",
-                    "borderRadius": "5px",
-                    "textAlign": "center",
-                    "margin": "10px auto"
-                },
-                multiple=False,
-                disabled=True
+            # Header
+            dbc.Row(
+                dbc.Col(
+                    html.H2("Bookkeeper", className="text-center my-4"),
+                )
             ),
 
-            dcc.Store(id="csv-store"),
-            html.Button("Save Column Mapping", id="save-column-btn"),
-            # Preview transactions
-            html.Div(id="transactions-preview"),
+            dbc.Row([
+                # Bookings Table (Left)
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody([
+                            html.H5("Bookings", className="card-title"),
+                            dash_table.DataTable(
+                                id="bookings-table",
+                                columns=[
+                                    {"name": "Booking ID", "id": "booking_id"},
+                                    {"name": "Date", "id": "date"},
+                                ],
+                                data=[],  # filled by callback
+                                row_selectable="single",
+                                style_table={"overflowX": "auto", "maxHeight": "300px", "overflowY": "auto"},
+                            ),
+                        ]),
+                        className="mb-4 shadow-sm"
+                    ),
+                    width=6
+                ),
+                # Transactions Table (Right)
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody([
+                            html.H5("Transactions for Selected Booking", className="card-title"),
+                            dash_table.DataTable(
+                                id="transactions-table",
+                                columns=[
+                                    {"name": "Transaction ID", "id": "transaction_id"},
+                                    {"name": "Date", "id": "date"},
+                                    {"name": "Amount", "id": "amount"},
+                                    {"name": "Currency", "id": "currency"},
+                                ],
+                                data=[],  # filled dynamically
+                                style_table={"overflowX": "auto", "maxHeight": "400px", "overflowY": "auto"},
+                            ),
+                        ]),
+                        className="mb-4 shadow-sm"
+                    ),
+                    width=6
+                ),
+            ], className="mb-4"),
 
+            # File upload in a card
+            dbc.Row(
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody([
+                            html.H5("Upload CSV File", className="card-title"),
+                            dcc.Upload(
+                                id="upload-data",
+                                children=html.Div([
+                                    "Drag and Drop or ",
+                                    html.A("Select a CSV File")
+                                ]),
+                                style={
+                                    "width": "100%",
+                                    "height": "60px",
+                                    "lineHeight": "60px",
+                                    "borderWidth": "2px",
+                                    "borderStyle": "dashed",
+                                    "borderRadius": "8px",
+                                    "textAlign": "center",
+                                    "margin": "10px 0",
+                                    "backgroundColor": "#f8f9fa",
+                                    "cursor": "pointer"
+                                },
+                                multiple=False
+                            ),
+                            dcc.Store(id="csv-store"),
+                        ]),
+                        className="mb-4 shadow-sm"
+                    )
+                ),
+                justify="center"
+            ),
 
-            # Button to save transactions
-            html.Button("Save Transactions", id="save-transactions-btn"),
-            html.Div(id="save-result"),
-        ])
+            # Hidden content (buttons and preview)
+            dbc.Row(
+                dbc.Col(
+                    html.Div([
+                        dbc.Button("Save Column Mapping", id="save-column-btn", color="primary", className="me-2 mb-3"),
+                        html.Div(id="transactions-preview", className="mb-3"),
+                        dbc.Button("Save Transactions", id="save-transactions-btn", color="success"),
+                        html.Div(id="save-result", className="mt-3")
+                    ], id="hidden-content", style={"display": "none"})
+                )
+            )
+        ], fluid=True)
 
         return layout
 
     def register_callbacks(self,app):
-
-        @app.callback( [Output("upload-data", "disabled"),
-            Output("current-booking-label", "children")],
-            Input("create-booking-btn", "n_clicks"),
-            prevent_initial_call=True
-        )
-        def create_booking_callback(n_clicks):
-            if not n_clicks:
-                raise PreventUpdate
-            self.current_booking_id = get_available_booking_id()  # <- must be implemented in db.py
-            return False,f"Active Booking ID: {self.current_booking_id}"
-
-
         @app.callback(
             Output("csv-store", "data", allow_duplicate = True),
             Input("upload-data", "contents"),
@@ -81,7 +131,7 @@ class Bookkeeper(Page):
         )
 
         def upload_csv(contents, filename):
-            if contents is None or self.current_booking_id is None:
+            if contents is None:
                 raise PreventUpdate
 
             content_type, content_string = contents.split(",")
@@ -104,13 +154,23 @@ class Bookkeeper(Page):
                         missing_columns.remove(column_name)
                         break
 
-
+            self.current_booking_id = get_available_booking_id()
             return {
                 "data": df.to_dict("records"),
                 "columns": list(df.columns),
                 "missing": missing_columns,
                 "source": filename
             }
+
+        @app.callback(
+            Output("hidden-content", "style"),
+            Input("upload-data", "contents")
+        )
+        def show_buttons_on_upload(contents):
+            if contents is None:
+                return {"display": "none"}  # Keep hidden
+            return {"display": "block"}  # Show after upload
+
 
         @app.callback(
             Output("transactions-preview", "children"),
@@ -159,6 +219,42 @@ class Bookkeeper(Page):
                         )
                     ]))
                 return html.Div(mapping_ui)
+
+        @app.callback(
+            Output("bookings-table", "data"),
+            Input("url", "pathname"),
+        )
+        def load_bookings(pathname):
+            print("loading bookings")
+            if pathname != Bookkeeper.path:
+                return []
+            rows = get_bookings()
+            if rows is None:
+                return []
+            return [{"booking_id": r[0], "date": r[1]} for r in rows]
+
+        # --- New: Load transactions for selected booking ---
+        @app.callback(
+            Output("transactions-table", "data"),
+            Input("bookings-table", "selected_rows"),
+            State("bookings-table", "data"),
+        )
+        def load_transactions(selected_rows, bookings_data):
+            if not selected_rows or not bookings_data:
+                return []
+
+            selected_booking_id = bookings_data[selected_rows[0]]["booking_id"]
+
+            transactions = select_transactions_from_booking(selected_booking_id)
+            return [{
+                "transaction_id": r[0],
+                "date": r[1],
+                "amount": r[2],
+                "currency": r[3],
+                "recipient": r[4],
+                "type": r[5],
+                "excluded": bool(r[6]), } for r in transactions]
+
 
         @app.callback(
             Output("csv-store", "data"),

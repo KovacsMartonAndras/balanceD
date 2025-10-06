@@ -34,17 +34,33 @@ class App:
 
 
     def init_layout(self):
-        layout = html.Div([
-        dcc.Location(id="url", refresh=False),
-        html.H1("Personal Finance Tracker"),
-        # Navigation menu
-        html.Div([
-            dcc.Link("Dashboard | ", href="/"),
-            dcc.Link("Bookkeeper | ", href="/bookkeeper"),
-            dcc.Link("Debug", href="/debug"),
-        ]),
-        html.Div(id="page-content")
-        ])
+        layout = dbc.Container([
+            dcc.Location(id="url", refresh=False),
+
+            # Header
+            dbc.Row(
+                dbc.Col(
+                    html.H1("Personal Finance Tracker", className="text-center my-4"),
+                )
+            ),
+
+            # Navigation bar
+            dbc.Nav(
+                [
+                    dbc.NavLink("Dashboard", href="/", active="exact"),
+                    dbc.NavLink("Bookkeeper", href="/bookkeeper", active="exact"),
+                    dbc.NavLink("Debug", href="/debug", active="exact"),
+                ],
+                pills=True,
+                justified=True,
+                className="mb-4",
+            ),
+
+            # Page content
+            dbc.Row(
+                dbc.Col(html.Div(id="page-content"))
+            )
+        ], fluid=True)
         return layout
 
     def register_callbacks(self):

@@ -34,6 +34,13 @@ def init_db():
             )
         """)
 
+    cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pockets (
+                    pocket_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL
+                )
+            """)
+
     # Create transactions table
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
@@ -46,12 +53,18 @@ def init_db():
                 source_csv TEXT NOT NULL,
                 excluded INTEGER NOT NULL DEFAULT 0,
                 booking_id INTEGER,
+                pocket_id INTEGER,
                 FOREIGN KEY (booking_id) REFERENCES bookings (booking_id),
+                FOREIGN KEY (pocket_id) REFERENCES pockets (pocket_id),
                 UNIQUE (amount, currency, recipient, date, type, source_csv)
             )
         """)
     conn.commit()
     conn.close()
+
+    if is_pockets_empty():
+        insert_pocket("Default")
+
 
 def insert_transaction(amount, currency, recipient, date, type, source_csv, excluded=0, booking_id=None) -> bool:
     added = False
@@ -69,9 +82,37 @@ def insert_transaction(amount, currency, recipient, date, type, source_csv, excl
         pass
     finally:
         conn.close()
-        print(added)
         return added
 
+
+import sqlite3
+
+
+def insert_pocket(name):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO pockets (name)
+        VALUES (?)
+    """, (name,))
+
+    conn.commit()
+    pocket_id = cursor.lastrowid  # Get the ID of the inserted pocket
+    conn.close()
+    return pocket_id
+
+
+def is_pockets_empty():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM pockets")
+    count = cursor.fetchone()[0]  # Get the first value from the result
+
+    conn.close()
+
+    return count == 0
 def query_db_read(query):
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query(query, conn)
